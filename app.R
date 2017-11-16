@@ -51,7 +51,7 @@ ui <- fluidPage(
 
 
 server <- function(input, output, session) {
-  RV<-reactiveValues(years=c(2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015),Clicks=list(), dy=c())
+  RV<-reactiveValues(years=c(2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015),Clicks=list(), dy=c(), clickedPolys=c())
   states <- states2015
   quart <- quantile(states$population)
   mybins<- c(quart[[1]], quart[[2]], quart[[3]], quart[[4]], quart[[5]])
@@ -62,7 +62,7 @@ server <- function(input, output, session) {
       tmpAdopt<- rbind((sum(states2004$population)-10000), (sum(states2005$population)-25000), (sum(states2006$population)-21000), (sum(states2007$population)-16000), (sum(states2008$population)-20000), (sum(states2009$population)-10000), (sum(states2010$population)-5000), (sum(states2011$population)-7649), (sum(states2012$population)-9863), (sum(states2013$population)-9853), (sum(states2014$population)-4680), (sum(states2015$population)-2034))
       
       RV$dy <- as.data.frame(cbind(year=RV$years, V2=tmpTotal, V3=tmpAdopt))
-      print(RV$dy)
+      print(RV$clickedPolys)
     } else {
       stateSubset2004 <- states2004[states2004@data$name %in% RV$Clicks, ]
       stateSubset2005 <- states2005[states2005@data$name %in% RV$Clicks, ]
@@ -81,6 +81,8 @@ server <- function(input, output, session) {
       tmpAdopt<- rbind((sum(stateSubset2004$population)-10000), (sum(stateSubset2005$population)-25000), (sum(stateSubset2006$population)-21000), (sum(stateSubset2007$population)-16000), (sum(stateSubset2008$population)-20000), (sum(stateSubset2009$population)-10000), (sum(stateSubset2010$population)-5000), (sum(stateSubset2011$population)-7649), (sum(stateSubset2012$population)-9863), (sum(stateSubset2013$population)-9853), (sum(stateSubset2014$population)-4680), (sum(stateSubset2015$population)-2034))
       
       RV$dy <- as.data.frame(cbind(year=RV$years, V2=tmpTotal, V3=tmpAdopt))
+      print(RV$dy)
+      
     }
   })
   
@@ -88,12 +90,13 @@ server <- function(input, output, session) {
   proxy <- leafletProxy("map")
   
   output$map <- renderLeaflet({
+    if(TRUE == TRUE){
     leaflet(states) %>%
     setView(-96, 37.8, 4) %>%
     addProviderTiles("MapBox", options = providerTileOptions(
       id = "mapbox.light",
       accessToken = Sys.getenv('MAPBOX_ACCESS_TOKEN'))) %>%
-    addPolygons(layerId=states$name,
+    addPolygons(layerId=states$name,group="original",
       fillColor = ~pal(population),
       weight = 2,
       opacity = 1,
@@ -116,7 +119,7 @@ server <- function(input, output, session) {
         direction = "auto")) %>%
     addLegend(pal = pal, values = ~population, opacity = 0.7, title = NULL,
               position = "bottomright")
-    })
+    }})
   
     observeEvent(input$map_shape_click, {
       #create object for clicked polygon
@@ -124,7 +127,7 @@ server <- function(input, output, session) {
       
       RV$Clicks<-c(RV$Clicks, click$id)
       
-      clickedPolys <- states[states@data$name %in% RV$Clicks, ]
+      RV$clickedPolys <- states[states@data$name %in% RV$Clicks, ]
       #if the shape has already been selected, remove it
       if(grepl("clicked",click$id)){
         #print("double click")
@@ -134,12 +137,13 @@ server <- function(input, output, session) {
         } else {
           RV$Clicks <- RV$Clicks[!RV$Clicks %in% word(click$id, 1)]
         }
+        RV$clickedPolys <- states[states@data$name %in% RV$Clicks, ]
         proxy %>% removeShape(layerId = click$id)
       #add the shape to the proxy map
       } else {
-        proxy %>% addPolygons(data=clickedPolys, 
-                              layerId=paste(clickedPolys$name, "clicked"), 
-                              fillColor = ~pal(clickedPolys$population), 
+        proxy %>% addPolygons(data=RV$clickedPolys, group="selected",
+                              layerId=paste(RV$clickedPolys$name, "clicked"), 
+                              fillColor = ~pal(RV$clickedPolys$population), 
                               fillOpacity = 1, 
                               weight=3, opacity=1, color="black", dashArray="",
                               highlight = highlightOptions(
@@ -150,7 +154,7 @@ server <- function(input, output, session) {
                                 bringToFront = TRUE),
                               label = sprintf(
                                 "<strong>%s</strong><br/>%g children",
-                                clickedPolys$name, clickedPolys$population
+                                RV$clickedPolys$name, RV$clickedPolys$population
                               ) %>% lapply(htmltools::HTML),
                               labelOptions = labelOptions(
                                 style = list("font-weight" = "normal", padding = "3px 8px"),
@@ -159,7 +163,7 @@ server <- function(input, output, session) {
       }
       #print(paste("Clicked object:",click$id))
       #print(paste("Clicks:",RV$Clicks))
-      #print(clickedPolys@data$name)
+      #print(RV$clickedPolys@data$name)
       
     })
   
@@ -184,11 +188,8 @@ server <- function(input, output, session) {
       mybins<- c(quart[[1]], quart[[2]], quart[[3]], quart[[4]], quart[[5]])
       pal <- colorBin(c("#ece7f2", "#a6bddb","#2b8cbe"), domain = states$population, bins = mybins)
       
-      proxy %>% clearShapes() %>% clearControls() %>%
-        addProviderTiles("MapBox", options = providerTileOptions(
-          id = "mapbox.light",
-          accessToken = Sys.getenv('MAPBOX_ACCESS_TOKEN'))) %>%
-        addPolygons(data=states, layerId=states$name,
+      proxy %>% clearControls() %>%
+        clearGroup("original") %>% addPolygons(data=states, layerId=states$name, group="original",
                     fillColor = ~pal(states$population),
                     weight = 2,
                     opacity = 1,
@@ -210,7 +211,30 @@ server <- function(input, output, session) {
                       textsize = "15px",
                       direction = "auto")) %>%
       addLegend(pal = pal, values = states$population, opacity = 0.7, title = NULL,
-                position = "bottomright")
+                position = "bottomright") 
+        
+      if(length(RV$Clicks) > 0){ 
+        proxy %>% clearGroup("selected") %>%
+          addPolygons(data=RV$clickedPolys, group="selected",
+                    layerId=paste(RV$clickedPolys$name, "clicked"), 
+                    fillColor = ~pal(RV$clickedPolys$population), 
+                    fillOpacity = 1, 
+                    weight=3, opacity=1, color="black", dashArray="",
+                    highlight = highlightOptions(
+                      weight = 5,
+                      color = "#666",
+                      dashArray = "",
+                      fillOpacity = 0.7,
+                      bringToFront = TRUE),
+                    label = sprintf(
+                      "<strong>%s</strong><br/>%g children",
+                      RV$clickedPolys$name, RV$clickedPolys$population
+                    ) %>% lapply(htmltools::HTML),
+                    labelOptions = labelOptions(
+                      style = list("font-weight" = "normal", padding = "3px 8px"),
+                      textsize = "15px",
+                      direction = "auto"))
+      }
     })
     
 }
