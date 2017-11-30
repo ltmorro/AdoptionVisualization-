@@ -17,7 +17,8 @@ library(dygraphs)
 data <- read.csv("Complete_FosterCare_selections.csv")
 states <- geojsonio::geojson_read("us-states2015.geojson", what = "sp")
 
-ui <- fluidPage(title="Adoption Incentive Program of 2008", theme="bootstrap.css",
+ui <- navbarPage(title="Adoption Incentive Program of 2008", theme="bootstrap.css",
+  tabPanel("Explore", 
   #top title header
   fluidRow(
     column(12,
@@ -65,6 +66,28 @@ ui <- fluidPage(title="Adoption Incentive Program of 2008", theme="bootstrap.css
            dygraphOutput("dygraph")
     )
   )
+  ),
+  tabPanel("About", 
+           h1(strong(HTML("About our visualization"))),
+           h3("What is the Incentive Program?"),
+             p("► Started by Clinton administration in 1997 as Adoption and Safe Families act."),
+             p("► Goal is to reduce the number of children lingering in foster care"),
+             p("► 2008 Program sets new fiscal awards based on 2007 levels of adoptions "),
+             p("► If a state adopts more children than their base, the value to the state is:"),
+             p(HTML("&emsp;● $4000.00 per child")),
+             p(HTML("&emsp;● $4000.00 more if the child is over 9 years old")),
+             p(HTML("&emsp;● $4000.00 for “special needs” children under 9 years old")),
+             p("► Since 2004, over $300,000,000.00 has been spent on incentives"),
+           h3("Data:"),
+            p("► Data for the Adoption and Foster Care Analysis and Reporting System (AFCARS) are given annually to the National Data Archive on Child Abuse and Neglect (NDACAN) for distribution to the research community by the Children’s Bureau."), 
+            p("► Funding for the project is provided by the Children’s Bureau, Administration on Children, Youth and Families, Administration for Children and Families, U.S. Department of Health and Human Services."),
+            p("► Observations range from 635,000 – 700,000 per year"),
+            p("► Over 75 variables with case level information on each child"),
+            p("► Visualization limited to the years 2004 - 2015"),
+            p("► Approximately 6 million observations total")
+  )
+           
+           
 )
 
 # Define server logic required to draw a histogram
