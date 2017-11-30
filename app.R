@@ -6,216 +6,279 @@
 #
 #    http://shiny.rstudio.com/
 #
-
 library(shiny)
+library(jsonlite)
+library(plyr)
+library(reshape2)
+library(geojson)
 library(leaflet)
-library(geojsonio)
 library(dygraphs)
-library(stringr)
 
+data <- read.csv("Complete_FosterCare_selections.csv")
+states <- geojsonio::geojson_read("us-states2015.geojson", what = "sp")
 
-states2015 <- geojsonio::geojson_read("/Users/ltmorro/Documents/Clemson Grad/CPSC 6300/FosterCareProject/TestMap/us-states2015.geojson", what = "sp")
-states2014 <- geojsonio::geojson_read("/Users/ltmorro/Documents/Clemson Grad/CPSC 6300/FosterCareProject/TestMap/us-states2014.geojson", what = "sp")
-states2013 <- geojsonio::geojson_read("/Users/ltmorro/Documents/Clemson Grad/CPSC 6300/FosterCareProject/TestMap/us-states2013.geojson", what = "sp")
-states2012 <- geojsonio::geojson_read("/Users/ltmorro/Documents/Clemson Grad/CPSC 6300/FosterCareProject/TestMap/us-states2012.geojson", what = "sp")
-states2011 <- geojsonio::geojson_read("/Users/ltmorro/Documents/Clemson Grad/CPSC 6300/FosterCareProject/TestMap/us-states2011.geojson", what = "sp")
-states2010 <- geojsonio::geojson_read("/Users/ltmorro/Documents/Clemson Grad/CPSC 6300/FosterCareProject/TestMap/us-states2010.geojson", what = "sp")
-states2009 <- geojsonio::geojson_read("/Users/ltmorro/Documents/Clemson Grad/CPSC 6300/FosterCareProject/TestMap/us-states2009.geojson", what = "sp")
-states2008 <- geojsonio::geojson_read("/Users/ltmorro/Documents/Clemson Grad/CPSC 6300/FosterCareProject/TestMap/us-states2008.geojson", what = "sp")
-states2007 <- geojsonio::geojson_read("/Users/ltmorro/Documents/Clemson Grad/CPSC 6300/FosterCareProject/TestMap/us-states2007.geojson", what = "sp")
-states2006 <- geojsonio::geojson_read("/Users/ltmorro/Documents/Clemson Grad/CPSC 6300/FosterCareProject/TestMap/us-states2006.geojson", what = "sp")
-states2005 <- geojsonio::geojson_read("/Users/ltmorro/Documents/Clemson Grad/CPSC 6300/FosterCareProject/TestMap/us-states2005.geojson", what = "sp")
-states2004 <- geojsonio::geojson_read("/Users/ltmorro/Documents/Clemson Grad/CPSC 6300/FosterCareProject/TestMap/us-states2004.geojson", what = "sp")
-
-
-ui <- fluidPage(
-  titlePanel("AFCARS Adoption"), 
-  sidebarLayout(
-    sidebarPanel(
-    checkboxGroupInput("gender", "Select a gender:",
-                c("Girl", "Boy"), selected = c("Girl", "Boy")
+ui <- fluidPage(title="Adoption Incentive Program of 2008", theme="bootstrap.css",
+  #top title header
+  fluidRow(
+    column(12,
+      h1(strong(HTML("<center>Adoption Incentive Program of 2008</center>")))
+    )
+  ),
+  #subtitle header
+  fluidRow(
+    column(12,
+           h3(em(HTML("<center>a visual exploration of its effectiveness</center>")))
+    )
+  ),
+  #first row contains the checkboxes and the map
+  fluidRow(
+    column(2, 
+           checkboxGroupInput("gender", "Select a gender:",
+                              c("Girl", "Boy"), selected = c("Girl", "Boy")
+           ),
+           checkboxGroupInput("race", "Select a race:",
+                              c("White", "Black", "Hispanic", "Other"), selected = c("White", "Black", "Hispanic", "Other")
+           ),
+           checkboxGroupInput("age", "Select an age group:",
+                              choiceNames=c("Older than 9", "Younger than 9"), selected= c("over9", "under9"), choiceValues = list("over9", "under9")
+           ),
+           checkboxGroupInput("specNd", "Select Special Needs:",
+                              choiceNames=c("Yes", "No"), selected= c("specYes", "specNo"), choiceValues = list("specYes", "specNo")
+           )
     ),
-    checkboxGroupInput("race", "Select a race:",
-                c("White", "Black", "Hispanic", "Asian"), selected = c("White", "Black", "Hispanic", "Asian")
+    column(10, 
+           leafletOutput("map")
+    )
+  ),
+  fluidRow(
+    column(12, 
+           p()
+    )
+  ),
+  #second row contains the instructions and the dygraph
+  fluidRow(
+    column(2, 
+           p("There are several ways included in this visualization to explore the data."), br(), p("-By selecting features above, the map and graph will update to reflect the current subset."),
+           br(), p("-By selecting states on the map, the graph will update to reflect the current subset."), br(), p("-By selecting a year on the graph, the map will update to reflect the current subset.")
     ),
-    checkboxGroupInput("special needs", "Filter Special Needs:",
-                c("Yes", "No"), selected= c("Yes", "No")
-    )),
-    mainPanel(
-      leafletOutput("map"), 
-      p(),
-      dygraphOutput("dygraph")
+    column(10, 
+           dygraphOutput("dygraph")
     )
   )
 )
 
-
-server <- function(input, output, session) {
-  RV<-reactiveValues(years=c(2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015),Clicks=list(), dy=c(), clickedPolys=c())
-  states <- states2015
-  quart <- quantile(states$population)
-  mybins<- c(quart[[1]], quart[[2]], quart[[3]], quart[[4]], quart[[5]])
+# Define server logic required to draw a histogram
+server <- function(input, output) {
+  RV<-reactiveValues(Clicks=list())
   
-  observe({
-    if(length(RV$Clicks) == 0){ 
-      tmpTotal<- rbind(sum(states2004$population), sum(states2005$population), sum(states2006$population), sum(states2007$population), sum(states2008$population), sum(states2009$population), sum(states2010$population), sum(states2011$population), sum(states2012$population), sum(states2013$population), sum(states2014$population), sum(states2015$population))
-      tmpAdopt<- rbind((sum(states2004$population)-10000), (sum(states2005$population)-25000), (sum(states2006$population)-21000), (sum(states2007$population)-16000), (sum(states2008$population)-20000), (sum(states2009$population)-10000), (sum(states2010$population)-5000), (sum(states2011$population)-7649), (sum(states2012$population)-9863), (sum(states2013$population)-9853), (sum(states2014$population)-4680), (sum(states2015$population)-2034))
-      
-      RV$dy <- as.data.frame(cbind(year=RV$years, V2=tmpTotal, V3=tmpAdopt))
-      print(RV$clickedPolys)
-    } else {
-      stateSubset2004 <- states2004[states2004@data$name %in% RV$Clicks, ]
-      stateSubset2005 <- states2005[states2005@data$name %in% RV$Clicks, ]
-      stateSubset2006 <- states2006[states2006@data$name %in% RV$Clicks, ]
-      stateSubset2007 <- states2007[states2007@data$name %in% RV$Clicks, ]
-      stateSubset2008 <- states2008[states2008@data$name %in% RV$Clicks, ]
-      stateSubset2009 <- states2009[states2009@data$name %in% RV$Clicks, ]
-      stateSubset2010 <- states2010[states2010@data$name %in% RV$Clicks, ]
-      stateSubset2011 <- states2011[states2011@data$name %in% RV$Clicks, ]
-      stateSubset2012 <- states2012[states2012@data$name %in% RV$Clicks, ]
-      stateSubset2013 <- states2013[states2013@data$name %in% RV$Clicks, ]
-      stateSubset2014 <- states2014[states2014@data$name %in% RV$Clicks, ]
-      stateSubset2015 <- states2015[states2015@data$name %in% RV$Clicks, ]
-      
-      tmpTotal<- rbind(sum(stateSubset2004$population), sum(stateSubset2005$population), sum(stateSubset2006$population), sum(stateSubset2007$population), sum(stateSubset2008$population), sum(stateSubset2009$population), sum(stateSubset2010$population), sum(stateSubset2011$population), sum(stateSubset2012$population), sum(stateSubset2013$population), sum(stateSubset2014$population), sum(stateSubset2015$population))
-      tmpAdopt<- rbind((sum(stateSubset2004$population)-10000), (sum(stateSubset2005$population)-25000), (sum(stateSubset2006$population)-21000), (sum(stateSubset2007$population)-16000), (sum(stateSubset2008$population)-20000), (sum(stateSubset2009$population)-10000), (sum(stateSubset2010$population)-5000), (sum(stateSubset2011$population)-7649), (sum(stateSubset2012$population)-9863), (sum(stateSubset2013$population)-9853), (sum(stateSubset2014$population)-4680), (sum(stateSubset2015$population)-2034))
-      
-      RV$dy <- as.data.frame(cbind(year=RV$years, V2=tmpTotal, V3=tmpAdopt))
-      print(RV$dy)
-      
-    }
-  })
-  
-  pal <- colorBin(c("#ece7f2", "#a6bddb","#2b8cbe"), domain = states$population, bins = mybins)
-  proxy <- leafletProxy("map")
-  
-  output$map <- renderLeaflet({
-    if(TRUE == TRUE){
-    leaflet(states) %>%
-    setView(-96, 37.8, 4) %>%
-    addProviderTiles("MapBox", options = providerTileOptions(
-      id = "mapbox.light",
-      accessToken = Sys.getenv('MAPBOX_ACCESS_TOKEN'))) %>%
-    addPolygons(layerId=states$name,group="original",
-      fillColor = ~pal(population),
-      weight = 2,
-      opacity = 1,
-      color = "white",
-      dashArray = "3",
-      fillOpacity = 0.7,
-      highlight = highlightOptions(
-        weight = 5,
-        color = "#666",
-        dashArray = "",
-        fillOpacity = 0.7,
-        bringToFront = TRUE),
-      label = sprintf(
-        "<strong>%s</strong><br/>%g children",
-        states$name, states$population
-      )%>% lapply(htmltools::HTML),
-      labelOptions = labelOptions(
-        style = list("font-weight" = "normal", padding = "3px 8px"),
-        textsize = "15px",
-        direction = "auto")) %>%
-    addLegend(pal = pal, values = ~population, opacity = 0.7, title = NULL,
-              position = "bottomright")
-    }})
-  
-    observeEvent(input$map_shape_click, {
-      #create object for clicked polygon
-      click <- input$map_shape_click
-      
-      RV$Clicks<-c(RV$Clicks, click$id)
-      
-      RV$clickedPolys <- states[states@data$name %in% RV$Clicks, ]
-      #if the shape has already been selected, remove it
-      if(grepl("clicked",click$id)){
-        #print("double click")
-        RV$Clicks <- RV$Clicks[!RV$Clicks %in% click$id]
-        if(str_count(click$id, "\\S+") > 2){
-          RV$Clicks <- RV$Clicks[!RV$Clicks %in% word(click$id, 1, 2)]
-        } else {
-          RV$Clicks <- RV$Clicks[!RV$Clicks %in% word(click$id, 1)]
-        }
-        RV$clickedPolys <- states[states@data$name %in% RV$Clicks, ]
-        proxy %>% removeShape(layerId = click$id)
-      #add the shape to the proxy map
-      } else {
-        proxy %>% addPolygons(data=RV$clickedPolys, group="selected",
-                              layerId=paste(RV$clickedPolys$name, "clicked"), 
-                              fillColor = ~pal(RV$clickedPolys$population), 
-                              fillOpacity = 1, 
-                              weight=3, opacity=1, color="black", dashArray="",
-                              highlight = highlightOptions(
-                                weight = 5,
-                                color = "#666",
-                                dashArray = "",
-                                fillOpacity = 0.7,
-                                bringToFront = TRUE),
-                              label = sprintf(
-                                "<strong>%s</strong><br/>%g children",
-                                RV$clickedPolys$name, RV$clickedPolys$population
-                              ) %>% lapply(htmltools::HTML),
-                              labelOptions = labelOptions(
-                                style = list("font-weight" = "normal", padding = "3px 8px"),
-                                textsize = "15px",
-                                direction = "auto"))
-      }
-      #print(paste("Clicked object:",click$id))
-      #print(paste("Clicks:",RV$Clicks))
-      #print(RV$clickedPolys@data$name)
-      
+  #the selection is reactive to which checkboxes are selected
+  selection <- reactive({
+    DF <- data    
+    #we use grepl to return boolean TRUE or FALSE to subset our data
+    subset(DF, grepl(tolower(paste(input$gender,collapse='|')), Sex) & grepl(tolower(paste(input$race,collapse='|')), Race) 
+          & grepl(tolower(paste(input$age,collapse='|')), Age_Bin) & grepl(paste(input$specNd,collapse='|'), Spec_Nd))
     })
   
-    #totalPop <- c(100000, 123000, 115000, 121000, 95000, 90000, 87000, 85000, 75000, 73000, 70000, 65000)
-    #adoptedPop <- c(10000, 11000, 13000, 9000, 33500, 22000, 17000, 18000, 15000, 12000, 10000, 14000)
-    output$dygraph <- renderDygraph(dygraph(RV$dy, main="Adoptions") %>%
-                                      dySeries("V2", label="Adoptable Population", color="#2b8cbe", strokeWidth=2) %>% 
-                                      dySeries("V3", label="Adopted Population", color="#ef8a62", strokeWidth=2) %>%
-                                      dyOptions(maxNumberWidth=20) %>% 
-                                      dyHighlight(highlightSeriesOpts = list(strokeWidth = 3)) %>%
-                                      dyCrosshair(direction="vertical") %>%
-                                      dyAxis("x", label = "Year", rangePad = 20, valueRange=c(2004, 2015)) %>%
-                                      dyAxis("y", label = "Population") %>%
-                                      dyEvent("2008", "Adoption Incentives Program", labelLoc = "bottom")
-    )
+  #this is the data for the dygraph
+  years <- reactive({
+    years <- data.frame(matrix(ncol = 3, nrow = 12))
+    names <- c("year", "TotalAdopted", "TotalPop")
+    colnames(years) <- names
+    years$year <- c(2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015)
     
-    observeEvent(input$dygraph_click, {
-      activeYear <- input$dygraph_click$x
-      states<-switch(activeYear-2003, states2004, states2005, states2006, states2007,states2008, states2009, states2010, states2011, states2012, states2013, states2014, states2015)
-      print(summary(states))
-      quart <- quantile(states$population)
-      mybins<- c(quart[[1]], quart[[2]], quart[[3]], quart[[4]], quart[[5]])
-      pal <- colorBin(c("#ece7f2", "#a6bddb","#2b8cbe"), domain = states$population, bins = mybins)
-      
-      proxy %>% clearControls() %>%
-        clearGroup("original") %>% addPolygons(data=states, layerId=states$name, group="original",
-                    fillColor = ~pal(states$population),
-                    weight = 2,
-                    opacity = 1,
-                    color = "white",
-                    dashArray = "3",
-                    fillOpacity = 0.7,
-                    highlight = highlightOptions(
-                      weight = 5,
-                      color = "#666",
-                      dashArray = "",
-                      fillOpacity = 0.7,
-                      bringToFront = TRUE),
-                    label = sprintf(
-                      "<strong>%s</strong><br/>%g children",
-                      states$name, states$population
-                    ) %>% lapply(htmltools::HTML),
-                    labelOptions = labelOptions(
-                      style = list("font-weight" = "normal", padding = "3px 8px"),
-                      textsize = "15px",
-                      direction = "auto")) %>%
-      addLegend(pal = pal, values = states$population, opacity = 0.7, title = NULL,
+    #subset the data by which states are clicked on the map
+    dySelection <- subset(selection(), grepl(paste(RV$clickedPolys$name, collapse='|'), State))
+
+    adopted <- subset(dySelection, grepl("adopted", Adopted))
+    notAdopted <- subset(dySelection, grepl("notAdopted", Adopted))
+    #we subset the adopted and not adopted data for every year, there probably is a better way to do this
+    y2004 <- subset(adopted, grepl(2004, Year))
+    y2005 <- subset(adopted, grepl(2005, Year))
+    y2006 <- subset(adopted, grepl(2006, Year))
+    y2007 <- subset(adopted, grepl(2007, Year))
+    y2008 <- subset(adopted, grepl(2008, Year))
+    y2009 <- subset(adopted, grepl(2009, Year))
+    y2010 <- subset(adopted, grepl(2010, Year))
+    y2011 <- subset(adopted, grepl(2011, Year))
+    y2012 <- subset(adopted, grepl(2012, Year))
+    y2013 <- subset(adopted, grepl(2013, Year))
+    y2014 <- subset(adopted, grepl(2014, Year))
+    y2015 <- subset(adopted, grepl(2015, Year))
+    years$TotalAdopted <- c(sum(y2004$Numbers),
+                            sum(y2005$Numbers),
+                            sum(y2006$Numbers),
+                            sum(y2007$Numbers),
+                            sum(y2008$Numbers),
+                            sum(y2009$Numbers),
+                            sum(y2010$Numbers),
+                            sum(y2011$Numbers),
+                            sum(y2012$Numbers),
+                            sum(y2013$Numbers),
+                            sum(y2014$Numbers),
+                            sum(y2015$Numbers))
+    
+    y2004 <- subset(notAdopted, grepl(2004, Year))
+    y2005 <- subset(notAdopted, grepl(2005, Year))
+    y2006 <- subset(notAdopted, grepl(2006, Year))
+    y2007 <- subset(notAdopted, grepl(2007, Year))
+    y2008 <- subset(notAdopted, grepl(2008, Year))
+    y2009 <- subset(notAdopted, grepl(2009, Year))
+    y2010 <- subset(notAdopted, grepl(2010, Year))
+    y2011 <- subset(notAdopted, grepl(2011, Year))
+    y2012 <- subset(notAdopted, grepl(2012, Year))
+    y2013 <- subset(notAdopted, grepl(2013, Year))
+    y2014 <- subset(notAdopted, grepl(2014, Year))
+    y2015 <- subset(notAdopted, grepl(2015, Year))
+    years$TotalPop <- c(sum(y2004$Numbers),
+                        sum(y2005$Numbers),
+                        sum(y2006$Numbers),
+                        sum(y2007$Numbers),
+                        sum(y2008$Numbers),
+                        sum(y2009$Numbers),
+                        sum(y2010$Numbers),
+                        sum(y2011$Numbers),
+                        sum(y2012$Numbers),
+                        sum(y2013$Numbers),
+                        sum(y2014$Numbers),
+                        sum(y2015$Numbers))
+    years$TotalPop <- as.numeric(years$TotalPop + years$TotalAdopted)
+    totalAdopted <- sum(adopted$Numbers)
+    totalNot <- sum(notAdopted$Numbers)
+    
+    #return the data for the dygraph
+    return(years)
+  })
+  
+  #this is the data for the map
+  selectedYear <- reactive({
+    #by default we will display 2015 data on the map
+    if(is.null(input$dygraph_click)){
+      clickedYear <- 2015
+    } else {
+      clickedYear <- as.numeric(input$dygraph_click$x)
+    }
+    #we subset the data based on which year has been clicked on the dygraph
+    current <- subset(selection(), grepl(clickedYear, Year))
+
+    #sum all the numbers to provide total population values to the states
+    currentPop <- aggregate(current$Numbers, by=list(current$State), FUN=sum)
+    states$population <- as.numeric(currentPop$x)
+    #print(states$population)
+    return(states)
+    
+  })
+  
+  pal <- colorBin(c("#ece7f2", "#a6bddb","#2b8cbe"), domain=c(0, 75, 500, 1500, 5000, 25000), bins=c(0, 75, 500, 1500, 5000, 25000), pretty=TRUE)
+  
+  #the output of the leaflet map
+  output$map <- renderLeaflet({
+    leaflet(states) %>%
+      setView(-96, 37.8, 4) %>%
+      addProviderTiles("MapBox", options = providerTileOptions(
+        id = "mapbox.light",
+        accessToken = Sys.getenv('MAPBOX_ACCESS_TOKEN')))
+  })
+  
+  #handling the clicks on the map
+  observeEvent(input$map_shape_click, {
+    #create object for clicked polygon
+    click <- input$map_shape_click
+    
+    RV$Clicks<-c(RV$Clicks, click$id)
+    selected <- selectedYear()
+    RV$clickedPolys <- selected[selected@data$name %in% RV$Clicks, ]
+    #if the shape has already been selected, remove it
+    if(grepl("clicked",click$id)){
+      #print("double click")
+      RV$Clicks <- RV$Clicks[!RV$Clicks %in% click$id]
+      if(str_count(click$id, "\\S+") > 2){
+        RV$Clicks <- RV$Clicks[!RV$Clicks %in% word(click$id, 1, 2)]
+      } else {
+        RV$Clicks <- RV$Clicks[!RV$Clicks %in% word(click$id, 1)]
+      }
+      RV$clickedPolys <- selected[selected@data$name %in% RV$Clicks, ]
+      leafletProxy("map", data=states) %>% removeShape(layerId = click$id)
+      #add the shape to the proxy map
+    } else {
+      leafletProxy("map", data=selectedYear()) %>% addPolygons(data=RV$clickedPolys, group="selected",
+                            layerId=paste(RV$clickedPolys$name, "clicked"), 
+                            fillColor = ~pal(RV$clickedPolys$population), 
+                            fillOpacity = 1, 
+                            weight=3, opacity=1, color="black", dashArray="",
+                            highlight = highlightOptions(
+                              weight = 5,
+                              color = "#666",
+                              dashArray = "",
+                              fillOpacity = 0.7,
+                              bringToFront = TRUE),
+                            label = sprintf(
+                              "<strong>%s</strong><br/>",
+                              RV$clickedPolys$name
+                            ) %>% lapply(htmltools::HTML),
+                            labelOptions = labelOptions(
+                              style = list("font-weight" = "normal", padding = "3px 8px"),
+                              textsize = "15px",
+                              direction = "auto"))
+    }
+    #print(paste("Clicked object:",click$id))
+    #print(paste("Clicks:",RV$Clicks))
+    #print(RV$clickedPolys@data$name)
+    
+  })
+  
+  #the output of the dygraph
+  output$dygraph <- renderDygraph(dygraph(years(), main="Adoptions") %>%
+                                    dySeries("TotalPop", label="Total Population", axis='y2', color="#2b8cbe", strokeWidth=2) %>% 
+                                    dySeries("TotalAdopted", label="Adopted Population", color="#ef8a62", strokeWidth=2) %>%
+                                    dyOptions(maxNumberWidth=20) %>% 
+                                    dyHighlight(highlightSeriesOpts = list(strokeWidth = 3)) %>%
+                                    dyCrosshair(direction="vertical") %>%
+                                    dyAxis("x", label = "Year", rangePad = 20, valueRange=c(2004, 2015)) %>%
+                                    dyAxis("y", label = "Adopted Population") %>%
+                                    dyAxis("y2", label = "Total Population", independentTicks = TRUE) %>%
+                                    dyEvent("2008", "Adoption Incentives Program", labelLoc = "bottom")
+  )
+  
+  #proxy for updating the leaflet if the selectedYear changes
+  observe({
+    proxy <- leafletProxy("map", data=selectedYear())
+    if(is.null(input$dygraph_click)){
+      clickedYear <- 2015
+    } else {
+      clickedYear <- as.numeric(input$dygraph_click$x)
+    }
+    currentTitle <- paste(clickedYear, " Population")
+    selected <- selectedYear()
+    proxy %>% clearControls() %>%
+      clearGroup("original") %>% clearGroup("selected") %>% addPolygons(data=selectedYear(), layerId=selected$name, group="original",
+                                             fillColor = ~pal(selected$population),
+                                             weight = 2,
+                                             opacity = 1,
+                                             color = "white",
+                                             dashArray = "3",
+                                             fillOpacity = 0.7,
+                                             highlight = highlightOptions(
+                                               weight = 5,
+                                               color = "#666",
+                                               dashArray = "",
+                                               fillOpacity = 0.7,
+                                               bringToFront = TRUE),
+                                             label = sprintf(
+                                               "<strong>%s</strong><br/>%g children",
+                                               selected$name, selected$population
+                                             ) %>% lapply(htmltools::HTML),
+                                             labelOptions = labelOptions(
+                                               style = list("font-weight" = "normal", padding = "3px 8px"),
+                                               textsize = "15px",
+                                               direction = "auto")) %>%
+      addLegend(pal = pal, values = selected$population, title= currentTitle, opacity = 0.7,
                 position = "bottomright") 
-        
-      if(length(RV$Clicks) > 0){ 
-        proxy %>% clearGroup("selected") %>%
-          addPolygons(data=RV$clickedPolys, group="selected",
+    
+    if(length(RV$Clicks) > 0){ 
+      RV$clickedPolys <- selected[selected@data$name %in% RV$Clicks, ]
+      
+      proxy %>% clearGroup("selected") %>%
+        addPolygons(data=RV$clickedPolys, group="selected",
                     layerId=paste(RV$clickedPolys$name, "clicked"), 
                     fillColor = ~pal(RV$clickedPolys$population), 
                     fillOpacity = 1, 
@@ -234,12 +297,11 @@ server <- function(input, output, session) {
                       style = list("font-weight" = "normal", padding = "3px 8px"),
                       textsize = "15px",
                       direction = "auto"))
-      }
-    })
-    
+    }
+  })
+  
+  
 }
+
 # Run the application 
 shinyApp(ui = ui, server = server)
-
-#library(rsconnect)
-#rsconnect::deployApp("C:/Users/Luke Morrow/Desktop/Clemson/cpsc6300/TestMap")
