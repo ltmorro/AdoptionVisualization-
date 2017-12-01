@@ -35,18 +35,8 @@ ui <- navbarPage(title="Adoption Incentive Program of 2008", theme="bootstrap.cs
   #first row contains the checkboxes and the map
   fluidRow(
     column(2, 
-           checkboxGroupInput("gender", "Select a gender:",
-                              c("Girl", "Boy"), selected = c("Girl", "Boy")
-           ),
-           checkboxGroupInput("race", "Select a race:",
-                              c("White", "Black", "Hispanic", "Other"), selected = c("White", "Black", "Hispanic", "Other")
-           ),
-           checkboxGroupInput("age", "Select an age group:",
-                              choiceNames=c("Older than 9", "Younger than 9"), selected= c("over9", "under9"), choiceValues = list("over9", "under9")
-           ),
-           checkboxGroupInput("specNd", "Select Special Needs:",
-                              choiceNames=c("Yes", "No"), selected= c("specYes", "specNo"), choiceValues = list("specYes", "specNo")
-           )
+           p("There are several ways included in this visualization to explore the data."), br(), p("-By selecting a year on either graph, the map will update to reflect data on the clicked graph."), br(), p("-By selecting features above, the map and graphs will update to reflect the current subset."),
+           br(), p("-By selecting states on the map, the graphs will update to reflect the current subset.")
     ),
     column(10, 
            leafletOutput("map")
@@ -60,11 +50,18 @@ ui <- navbarPage(title="Adoption Incentive Program of 2008", theme="bootstrap.cs
   #second row contains the instructions and the dygraph
   fluidRow(
     column(2, 
-           p("There are several ways included in this visualization to explore the data."), br(), p("-By selecting features above, the map and graph will update to reflect the current subset."),
-           br(), p("-By selecting states on the map, the graph will update to reflect the current subset."), br(), p("-By selecting a year on the graph, the map will update to reflect the current subset.")
+           checkboxGroupInput("gender", "Select a gender:",
+                              c("Girl", "Boy"), selected = c("Girl", "Boy")
+           ),
+           checkboxGroupInput("race", "Select a race:",
+                              c("White", "Black", "Hispanic", "Other"), selected = c("White", "Black", "Hispanic", "Other")
+           ),
+           checkboxGroupInput("age", "Select an age group:",
+                              choiceNames=c("Older than 9", "Younger than 9"), selected= c("over9", "under9"), choiceValues = list("over9", "under9")
+           )
     ),
     column(10, 
-           dygraphOutput("dygraph", height="60%"), dygraphOutput("dygraph2", height="60%")
+           dygraphOutput("dygraph", height="55%"), dygraphOutput("dygraph2", height="55%")
     )
   )
   ),
@@ -100,7 +97,7 @@ server <- function(input, output) {
     DF <- data    
     #we use grepl to return boolean TRUE or FALSE to subset our data
     subset(DF, grepl(tolower(paste(input$gender,collapse='|')), Sex) & grepl(tolower(paste(input$race,collapse='|')), Race) 
-          & grepl(tolower(paste(input$age,collapse='|')), Age_Bin) & grepl(paste(input$specNd,collapse='|'), Spec_Nd))
+          & grepl(tolower(paste(input$age,collapse='|')), Age_Bin))
     })
   
   #this is the data for the dygraph
@@ -189,7 +186,7 @@ server <- function(input, output) {
   
   #this is the data for the map
   selectedYear <- reactive({
-    RV$total = TRUE
+    RV$total <- TRUE
     #by default we will display 2015 data on the map
     if(is.null(input$dygraph_click)){
       clickedYear <- 2015
@@ -213,7 +210,7 @@ server <- function(input, output) {
   
   #this is the adopted data for the map
   selectedYearAdopt <- reactive({
-    RV$total = FALSE
+    RV$total <- FALSE
     #by default we will display 2015 data on the map
     if(is.null(input$dygraph2_click)){
       clickedYear <- 2015
@@ -230,7 +227,6 @@ server <- function(input, output) {
     currentPop <- rbind(currentPop[-c(40), ], currentPop[c(40), ]) 
     
     states$population <- as.numeric(currentPop$x)
-    print(c(states$name, states@data$population))
     #print(states$population)
     return(states)
     
@@ -327,7 +323,7 @@ server <- function(input, output) {
   output$dygraph <- renderDygraph(dygraph(yearsTotal(), main="Total Population", group="graphs") %>%
                                     dySeries("TotalPop", label="Total Population", color="#2b8cbe", strokeWidth=2) %>% 
                                     dyOptions(maxNumberWidth=20) %>% 
-                                    dyHighlight(highlightSeriesOpts = list(strokeWidth = 3)) %>%
+                                    dyHighlight(highlightSeriesOpts = list(strokeWidth = 3), hideOnMouseOut=FALSE) %>%
                                     dyCrosshair(direction="vertical") %>%
                                     dyAxis("x", label = "Year", rangePad = 75, valueRange=c(2004, 2015), drawGrid=FALSE) %>%
                                     dyAxis("y", label = "Total Population", pixelsPerLabel="15", axisLabelWidth = 70) %>%
@@ -337,7 +333,7 @@ server <- function(input, output) {
   output$dygraph2 <- renderDygraph(dygraph(years(), main="Adopted Population", group="graphs") %>%
                                     dySeries("TotalAdopted", label="Adopted Population", color="#ef8a62", strokeWidth=2) %>%
                                     dyOptions( maxNumberWidth=20) %>% 
-                                    dyHighlight(highlightSeriesOpts = list(strokeWidth = 3)) %>%
+                                    dyHighlight(highlightSeriesOpts = list(strokeWidth = 3), hideOnMouseOut=FALSE) %>%
                                     dyCrosshair(direction="vertical") %>%
                                     dyAxis("x", label = "Year", rangePad = 75, valueRange=c(2004, 2015), drawGrid=FALSE) %>%
                                     dyAxis("y", label = "Adopted Population", pixelsPerLabel="15", axisLabelWidth = 70) %>%
@@ -346,6 +342,8 @@ server <- function(input, output) {
   
   #proxy for updating the leaflet if the selectedYear changes
   observeEvent(input$dygraph_click, {
+    RV$total <- TRUE
+
     proxy <- leafletProxy("map", data=selectedYear())
     if(is.null(input$dygraph_click)){
       clickedYear <- 2015
@@ -407,8 +405,9 @@ server <- function(input, output) {
   
   #proxy for updating the adopted leaflet if the selectedYear changes
   observeEvent(input$dygraph2_click, {
+    RV$total <- FALSE
     proxy <- leafletProxy("map", data=selectedYearAdopt())
-    if(is.null(input$dygraph_click)){
+    if(is.null(input$dygraph2_click)){
       clickedYear <- 2015
     } else {
       clickedYear <- as.numeric(input$dygraph2_click$x)
@@ -463,6 +462,134 @@ server <- function(input, output) {
                       style = list("font-weight" = "normal", padding = "3px 8px"),
                       textsize = "15px",
                       direction = "auto"))
+    }
+  })
+  
+  #proxy for updating the leaflet if the gender changes
+  observeEvent({input$gender 
+                input$age
+                input$race}, {
+    if(RV$total){
+      selected <- selectedYear()
+    } else {
+      selected <- selectedYearAdopt()
+    }
+    proxy <- leafletProxy("map", data=selected)
+                  
+    if(RV$total == TRUE){
+      if(is.null(input$dygraph_click)){
+        clickedYear <- 2015
+      } else {
+        clickedYear <- as.numeric(input$dygraph_click$x)
+      }
+      currentTitle <- paste(clickedYear, " Population")
+      
+      proxy %>% clearControls() %>% clearGroup("original") %>% clearGroup("selected") %>%
+               addPolygons(data=selectedYear(), layerId=selected$name, group="original",
+                fillColor = ~pal(selected$population),
+                weight = 2,
+                opacity = 1,
+                color = "white",
+                dashArray = "3",
+                fillOpacity = 0.7,
+                highlight = highlightOptions(
+                  weight = 5,
+                  color = "#666",
+                  dashArray = "",
+                  fillOpacity = 0.7,
+                  bringToFront = TRUE),
+                label = sprintf(
+                  "<strong>%s</strong><br/>%g children",
+                  selected$name, selected$population
+                ) %>% lapply(htmltools::HTML),
+                labelOptions = labelOptions(
+                  style = list("font-weight" = "normal", padding = "3px 8px"),
+                  textsize = "15px",
+                  direction = "auto")) %>%
+              addLegend(pal = pal, values = selected$population, title= currentTitle, opacity = 0.7,
+                position = "bottomright") 
+    
+      if(length(RV$Clicks) > 0){ 
+        RV$clickedPolys <- selected[selected@data$name %in% RV$Clicks, ]
+        
+        proxy %>% clearGroup("selected") %>%
+          addPolygons(data=RV$clickedPolys, group="selected",
+                      layerId=paste(RV$clickedPolys$name, "clicked"), 
+                      fillColor = ~pal(RV$clickedPolys$population), 
+                      fillOpacity = 1, 
+                      weight=3, opacity=1, color="black", dashArray="",
+                      highlight = highlightOptions(
+                        weight = 5,
+                        color = "#666",
+                        dashArray = "",
+                        fillOpacity = 0.7,
+                        bringToFront = TRUE),
+                      label = sprintf(
+                        "<strong>%s</strong><br/>%g children",
+                        RV$clickedPolys$name, RV$clickedPolys$population
+                      ) %>% lapply(htmltools::HTML),
+                      labelOptions = labelOptions(
+                        style = list("font-weight" = "normal", padding = "3px 8px"),
+                        textsize = "15px",
+                        direction = "auto"))
+        }
+    } else {
+      if(is.null(input$dygraph2_click)){
+        clickedYear <- 2015
+      } else {
+        clickedYear <- as.numeric(input$dygraph2_click$x)
+      }
+      currentTitle <- paste(clickedYear, "Adoption Population")
+      
+      proxy %>% clearControls() %>% 
+        clearGroup("original") %>% clearGroup("selected") %>% addPolygons(data=selectedYearAdopt(), layerId=selected$name, group="original",
+                                                                        fillColor = ~palAdopt(selected$population),
+                                                                        weight = 2,
+                                                                        opacity = 1,
+                                                                        color = "white",
+                                                                        dashArray = "3",
+                                                                        fillOpacity = 0.7,
+                                                                        highlight = highlightOptions(
+                                                                          weight = 5,
+                                                                          color = "#666",
+                                                                          dashArray = "",
+                                                                          fillOpacity = 0.7,
+                                                                          bringToFront = TRUE),
+                                                                        label = sprintf(
+                                                                          "<strong>%s</strong><br/>%g children",
+                                                                          selected$name, selected$population
+                                                                        ) %>% lapply(htmltools::HTML),
+                                                                        labelOptions = labelOptions(
+                                                                          style = list("font-weight" = "normal", padding = "3px 8px"),
+                                                                          textsize = "15px",
+                                                                          direction = "auto")) %>%
+        addLegend(pal = palAdopt, values = selected$population, title= currentTitle, opacity = 0.7,
+                  position = "bottomright") 
+      
+      if(length(RV$Clicks) > 0){ 
+        RV$clickedPolys <- selected[selected@data$name %in% RV$Clicks, ]
+        
+        proxy %>% clearGroup("selected") %>%
+          addPolygons(data=RV$clickedPolys, group="selected",
+                      layerId=paste(RV$clickedPolys$name, "clicked"), 
+                      fillColor = ~palAdopt(RV$clickedPolys$population), 
+                      fillOpacity = 1, 
+                      weight=3, opacity=1, color="black", dashArray="",
+                      highlight = highlightOptions(
+                        weight = 5,
+                        color = "#666",
+                        dashArray = "",
+                        fillOpacity = 0.7,
+                        bringToFront = TRUE),
+                      label = sprintf(
+                        "<strong>%s</strong><br/>%g children",
+                        RV$clickedPolys$name, RV$clickedPolys$population
+                      ) %>% lapply(htmltools::HTML),
+                      labelOptions = labelOptions(
+                        style = list("font-weight" = "normal", padding = "3px 8px"),
+                        textsize = "15px",
+                        direction = "auto"))
+      }
     }
   })
 }
